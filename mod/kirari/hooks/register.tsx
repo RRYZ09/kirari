@@ -13,8 +13,22 @@ const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
 const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
 const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
+const PUCHI_HOSTS = ['192.168.8.101', '192.168.1.14', 'puchiteya.local']
+let puchiHost = ''   // ぷちてゃ本体の、いま届くアドレス(無ければ '')
+type Dollar = Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never
+const findPuchi = async ($: Dollar) => {
+  for (const h of PUCHI_HOSTS) {
+    try { const r = await $.http.fetch(`http://${h}/status`, { method: 'GET' }); if (r.ok) { puchiHost = h; return } } catch { /* 次へ */ }
+  }
+  puchiHost = ''
+}
+// 本体で鳴らす。本体に届かないときは PC の音(小さい)で代える
+const ring = async ($: Dollar, name: 'kira' | 'poko') => {
+  if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=kirari_${name}.wav`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
+  void $.audio.play({ asset: `sounds/${name}.wav` }).catch(() => {})
+}
 const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
-const readDesires = async ($: Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never) => {
+const readDesires = async ($: Dollar) => {
   try {
     const r = await $.http.fetch(STATUS, { method: 'GET' })
     if (!r.ok) return
@@ -28,7 +42,7 @@ const QUIET_MS = 60000   // 人が 1 分打たないと、きらりが出てく�
 // ぷちてゃ(家の M5Stack)の /sensors。応答が無ければ「寝てる」
 // ダッシュボード経由(m5-petit 上)。ぷちてゃ本体の IP は変わるので直接は叩かない
 const PUCHITEYA = 'http://127.0.0.1:8765/api/puchiteya/sensors'
-const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never) => {
+const readSensors = async ($: Dollar) => {
   try {
     const r = await $.http.fetch(PUCHITEYA, { method: 'GET' })
     if (!r.ok) throw new Error(String(r.status))
@@ -40,12 +54,12 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     // さわられた(前回は触られていなかった → 今回 10 秒以内): ぽこっ + 一言
     const wasTouched = (prev?.touchAgo ?? 99) < 10
     if ((touchAgo ?? 99) < 10 && !wasTouched) {
-      void $.audio.play({ asset: 'sounds/poko.wav' }).catch(() => {})
+      void ring($, 'poko')
       await update($, lastEvent, () => ({ kind: 'touch', at: Date.now() }))
     }
     // 揺れた: きらっ
     if (shake > 1 && (prev?.shake ?? 0) <= 1) {
-      void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {})
+      void ring($, 'kira')
       await update($, lastEvent, () => ({ kind: 'shake', at: Date.now() }))
     }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
@@ -88,6 +102,8 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'kirari', description: `${profile.name || 'きらり'}に話しかける(待ち時間用)。例: /kirari こんにちは` })
     // ペットの歩み(400ms ごとに 1 コマ)
     $.clock.every(700, () => { void update($, frame, n => (n + 1) % 100000) })
+    void findPuchi($)
+    $.clock.every(120000, () => { void findPuchi($) })
     void readSensors($)
     $.clock.every(10000, () => { void readSensors($) })
     void readDesires($)
@@ -135,7 +151,7 @@ export const register: Register = (on, options) => {
       reply = r.text.trim()
     } catch { reply = profile.busy[0] ?? '…' }
     await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
-    void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {})   // きらっ
+    void ring($, 'kira')   // きらっ(ぷちてゃ本体で)
     await update($, mood, () => 'idle')
     if (wantsVoice) { try { await $.audio.speak(reply) } catch { /* 読み上げが無い環境 */ } }
     return { text: `${profile.name}「${reply}」` }
