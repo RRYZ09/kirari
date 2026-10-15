@@ -119,7 +119,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         <Text>{' '.repeat(x) + sprite}{profile.name ? `  ${profile.name}: ${last && last.who === 'pet' ? last.text : say}` : ''}</Text>
-        <Text dimColor>{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}  /pet <ことば></Text>
+        <Text dimColor>{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}{'  /pet <ことば>'}</Text>
       </Box>
     )
   })
