@@ -40,7 +40,6 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     const wasTouched = (prev?.touchAgo ?? 99) < 10
     if ((touchAgo ?? 99) < 10 && !wasTouched) {
       void $.audio.play({ asset: 'sounds/poko.wav' }).catch(() => {})
-      $.ui.toast('ぷちてゃ、さわられたって', { timeoutMs: 3000 })
       await update($, lastEvent, () => ({ kind: 'touch', at: Date.now() }))
     }
     // 揺れた: きらっ
@@ -114,7 +113,6 @@ export const register: Register = (on, options) => {
       const head = e.text.replace(/\s+/g, ' ').slice(0, 60)
       const note: Note = { id: noteSeq++, at: await $.clock.now(), from: kind, text: e.text.slice(0, 600), isOpen: false }
       await update($, notes, list => [note, ...list].slice(0, 20))
-      $.ui.toast(`🔔 ${kind}: ${head}`, { timeoutMs: 6000 })
     }
     return next(e)
   })
@@ -148,12 +146,16 @@ export const register: Register = (on, options) => {
     const quietFor = Date.now() - (await read($, lastTyped))
     const isLonely = m === 'idle' && quietFor > QUIET_MS
     const ev0 = await read($, lastEvent)
-    const hasEvent = !!ev0 && Date.now() - ev0.at < 90000
+    const ns0 = await read($, notes)
+    const hasNote = ns0.some(n => Date.now() - n.at < 20000)
+    const hasEvent = (!!ev0 && Date.now() - ev0.at < 90000) || hasNote
     if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
     const [f, ls, task, sn, ns, ev, ds] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent), read($, desires)])
     const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
+    const fresh = ns.find(n => Date.now() - n.at < 20000)
+    const noteSay = fresh ? `🔔 ${fresh.from}: ${fresh.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 14))}` : ''
     const evSay = ev && evAge < 90 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
     const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const sprite = profile.sprites[f % profile.sprites.length]
@@ -170,7 +172,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
         <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sp(f + 3) + sprite + sp(f) + (evAge < 90 ? ' ♡' : '')}</Text>
-        <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${noteSay || evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
         <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
       </Box>
     )
