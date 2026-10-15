@@ -142,7 +142,7 @@ export const register: Register = (on, options) => {
   // /pet こんにちは → ペットが短く返す(忙しくても暇でも答えるが、暇なときは一言だけ)
   on('command.run', { command: 'kirari' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
-    if (!said) { const on = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (on ? 0 : Date.now() + 180000)); return { text: on ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む` } }
+    if (!said) { const isPinned = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (isPinned ? 0 : Date.now() + 180000)); return { text: isPinned ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む` } }
     await update($, lastTyped, () => Date.now())
     await update($, lines, l => [...l, { who: 'you', text: said } as Line].slice(-12))
     await update($, mood, () => 'talk')
