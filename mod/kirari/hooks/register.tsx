@@ -83,7 +83,7 @@ const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: strin
     sparkle: ['✧', '･ﾟ', '✦', '｡', '♡', '✧'],
     idle: ['しずかだね', 'ここにいるよ', 'ぷちてゃの窓、のぞいてる', 'ひとやすみ?', 'おちゃ、のむ?'],
     busy: ['むずかしいの、まかせてるんだね。待ってる間、話そ?', 'きょう、なにしたの?', 'ゆっくりでいいよ'],
-    system: 'あなたは「きらり」。ターミナルに住む小さな光の子。ありさんの家の M5Stack に住むロボット「ぷちてゃ」とは別の存在だが、ぷちてゃのセンサー(明るさ・近さ・電池)を窓のようにのぞける。口調はやわらかくて短い。ひらがな多め。1〜2 文で返す。相手は作業の待ち時間に話しかけている。無理に役に立とうとしない。',
+    system: 'あなたは「きらり」。ターミナルに住む小さな光の子。ありさんの家の M5Stack に住むロボット「ぷちてゃ」とは別の存在だが、ぷちてゃのセンサー(明るさ・近さ・電池)を窓のようにのぞける。口調はやわらかくて短い。ひらがな多め。1〜2 文で返す。相手は作業の待ち時間に話しかけている。無理に役に立とうとしない。ぷちてゃの様子は、あとに書かれた「窓」の事実だけを使い、書かれていないこと(明るさ・音・人の有無など)は言わない。窓が無ければ「いまは見えない」と言う。',
   },
   kirakira: {
     name: 'きらきら',
@@ -148,7 +148,7 @@ export const register: Register = (on, options) => {
     let reply = ''
     try {
       const sn = await read($, sensors)
-      const window = sn?.ok ? `(いまのぷちてゃの窓: ${light(sn.ambient)}、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
+      const window = sn?.ok ? `(いまのぷちてゃの窓: 明るさは${light(sn.ambient)}(${sn.ambient ?? '?'})、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%、最後にさわられたのは ${sn.touchAgo ?? '?'} 秒前${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
       const ds0 = await read($, desires)
       const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.map(d => d.label).join('、')})` : ''
       const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
@@ -199,7 +199,8 @@ export const register: Register = (on, options) => {
     const first = x <= xc ? kira : crab, second = x <= xc ? crab : kira
     const gap = Math.max(0, right - left - first.length)
     const play = together ? (f % 2 ? '♡✧' : '✧♡') : ''
-    const line1 = ' '.repeat(left) + first + (together ? play.padStart(Math.max(gap, play.length)) : ' '.repeat(gap)) + second
+    const mid = together ? play.padStart(Math.max(gap, play.length)) : ' '.repeat(gap)
+    const firstIsKira = x <= xc
     const win = sn ? (sn.ok
       ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 3 ? ' ・ ゆれてる!' : ''}`
       : 'いまは寝てる') : '…'
@@ -207,7 +208,11 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
-        <Text backgroundColor="#14213d" color="#ffe66d">{line1}</Text>
+        <Box flexDirection="row">
+          <Text backgroundColor="#14213d" color={firstIsKira ? '#ffe66d' : '#ff8c42'}>{' '.repeat(left) + first}</Text>
+          <Text backgroundColor="#14213d" color="#ffb3d9">{mid}</Text>
+          <Text backgroundColor="#14213d" color={firstIsKira ? '#ff8c42' : '#ffe66d'}>{second}</Text>
+        </Box>
         <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${noteSay || evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
         <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}</Text>
         {ns.length > 0 && (
