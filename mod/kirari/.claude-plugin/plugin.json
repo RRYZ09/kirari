@@ -1,5 +1,5 @@
 {
-  "name": "puchi-pet",
+  "name": "kirari",
   "version": "0.1.0",
   "description": "ターミナルに住む小さな光の子「きらり」。難しい仕事を待つ間だけ話せて、ぷちてゃのセンサーを窓のようにのぞく。よそからの知らせは右上に静かに積まれる",
   "types": "./types/index.d.ts",

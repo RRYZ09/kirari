@@ -3,12 +3,14 @@ import type { Register } from 'claude-code'
 
 import type { Line, Mood, Note, Sensors } from '../types'
 
-const mood = atom({ plugin: 'puchi-pet', key: 'mood' } as const, 'idle' as Mood)
-const frame = atom({ plugin: 'puchi-pet', key: 'frame' } as const, 0)
-const notes = atom({ plugin: 'puchi-pet', key: 'notes' } as const, [] as Note[])
-const lines = atom({ plugin: 'puchi-pet', key: 'lines' } as const, [] as Line[])
-const busyTask = atom({ plugin: 'puchi-pet', key: 'busyTask' } as const, '')
-const sensors = atom({ plugin: 'puchi-pet', key: 'sensors' } as const, null as Sensors | null)
+const mood = atom({ plugin: 'kirari', key: 'mood' } as const, 'idle' as Mood)
+const frame = atom({ plugin: 'kirari', key: 'frame' } as const, 0)
+const notes = atom({ plugin: 'kirari', key: 'notes' } as const, [] as Note[])
+const lines = atom({ plugin: 'kirari', key: 'lines' } as const, [] as Line[])
+const busyTask = atom({ plugin: 'kirari', key: 'busyTask' } as const, '')
+const sensors = atom({ plugin: 'kirari', key: 'sensors' } as const, null as Sensors | null)
+const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
+const QUIET_MS = 60000   // 人が 1 分打たないと、きらりが出てくる
 // ぷちてゃ(家の M5Stack)の /sensors。応答が無ければ「寝てる」
 // ダッシュボード経由(m5-petit 上)。ぷちてゃ本体の IP は変わるので直接は叩かない
 const PUCHITEYA = 'http://127.0.0.1:8765/api/puchiteya/sensors'
@@ -31,7 +33,7 @@ const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: strin
     name: 'きらり',
     sprites: ['(◕ᴗ◕)', '(◕ᴗ◕)', '(◕ᴗ◕)', '(-ᴗ-)'],
     sparkle: ['✧', '･', '✦', '｡'],
-    idle: ['しずかだね', 'ここにいるよ', 'ぷちてゃの窓、のぞいてる'],
+    idle: ['しずかだね', 'ここにいるよ', 'ぷちてゃの窓、のぞいてる', 'ひとやすみ?', 'おちゃ、のむ?'],
     busy: ['むずかしいの、まかせてるんだね。待ってる間、話そ?', 'きょう、なにしたの?', 'ゆっくりでいいよ'],
     system: 'あなたは「きらり」。ターミナルに住む小さな光の子。ありさんの家の M5Stack に住むロボット「ぷちてゃ」とは別の存在だが、ぷちてゃのセンサー(明るさ・近さ・電池)を窓のようにのぞける。口調はやわらかくて短い。ひらがな多め。1〜2 文で返す。相手は作業の待ち時間に話しかけている。無理に役に立とうとしない。',
   },
@@ -53,9 +55,9 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     void $.ui.close({ id: 'puchi-pet' }).catch(() => {})   // 前の版が開いたペインを片付ける
-    await $.command.register({ name: 'pet', description: `${profile.name || 'ペット'}に話しかける(待ち時間用)。例: /pet こんにちは` })
+    await $.command.register({ name: 'kirari', description: `${profile.name || 'きらり'}に話しかける(待ち時間用)。例: /kirari こんにちは` })
     // ペットの歩み(400ms ごとに 1 コマ)
-    $.clock.every(2000, () => { void update($, frame, n => (n + 1) % 1000) })
+    $.clock.every(700, () => { void update($, frame, n => (n + 1) % 100000) })
     void readSensors($)
     $.clock.every(20000, () => { void readSensors($) })
 
@@ -63,8 +65,10 @@ export const register: Register = (on, options) => {
   })
 
   // 忙しさの判定: ターンが走っている間は busy。サブエージェントを出したら、その内容を覚える
+  on('prompt.change', async ($, e, next) => { await update($, lastTyped, () => Date.now()); return next(e) })
+  on('prompt.submit', async ($, e, next) => { await update($, lastTyped, () => Date.now()); return next(e) })
   on('turn.start', async ($, e, next) => { await update($, mood, () => 'busy'); return next(e) })
-  on('turn.complete', async ($, e, next) => { await update($, mood, () => 'idle'); await update($, busyTask, () => ''); return next(e) })
+  on('turn.complete', async ($, e, next) => { await update($, mood, () => 'idle'); await update($, busyTask, () => ''); await update($, lastTyped, () => Date.now()); return next(e) })
   on('agent.spawn', async ($, e, next) => {
     const head = String((e as { prompt?: string }).prompt ?? '').split('\n')[0].slice(0, 40)
     await update($, busyTask, () => head)
@@ -84,9 +88,10 @@ export const register: Register = (on, options) => {
   })
 
   // /pet こんにちは → ペットが短く返す(忙しくても暇でも答えるが、暇なときは一言だけ)
-  on('command.run', { command: 'pet' }, async ($, e) => {
+  on('command.run', { command: 'kirari' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
-    if (!said) return { text: `/pet <ことば> で ${profile.name} に話せるよ(Claude が働いている間だけ、入力欄の上に出てくる)` }
+    if (!said) return { text: `/kirari <ことば> で ${profile.name} に話せるよ(Claude が働いている間だけ、入力欄の上に出てくる)` }
+    await update($, lastTyped, () => Date.now())
     await update($, lines, l => [...l, { who: 'you', text: said } as Line].slice(-12))
     await update($, mood, () => 'talk')
     let reply = ''
@@ -97,6 +102,7 @@ export const register: Register = (on, options) => {
       reply = r.text.trim()
     } catch { reply = profile.busy[0] ?? '…' }
     await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
+    void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {})   // きらっ
     await update($, mood, () => 'idle')
     if (wantsVoice) { try { await $.audio.speak(reply) } catch { /* 読み上げが無い環境 */ } }
     return { text: `${profile.name}「${reply}」` }
@@ -105,22 +111,26 @@ export const register: Register = (on, options) => {
   // Claude が働いている間だけ、入力欄の上に 2〜3 行。暇なときは何も出さない
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const m = await read($, mood)
-    if (m === 'idle' || e.props.hasSurvey) return next(e)
+    const quietFor = Date.now() - (await read($, lastTyped))
+    const isLonely = m === 'idle' && quietFor > QUIET_MS
+    if ((m === 'idle' && !isLonely) || e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
+    const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
     const [f, ls, task, sn, ns] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes)])
     const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const sprite = profile.sprites[f % profile.sprites.length]
-    const span = Math.max(1, Math.min(cols - sprite.length - 2, 24))
-    const t = Math.floor(f / 2) % (span * 2)
+    const span = Math.max(1, cols - sprite.length - 2)
+    const t = f % (span * 2)
     const x = t < span ? t : span * 2 - t
-    const say = m === 'talk' ? '…かんがえ中' : (profile.busy[Math.floor(f / 6) % Math.max(1, profile.busy.length)] ?? '')
+    const say = m === 'talk' ? '…かんがえ中' : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
     const win = sn ? (sn.ok ? `${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 99) < 10 ? ' ・ さわられた' : ''}` : 'いまは寝てる') : '…'
 
     return (
-      <Box flexDirection="column">
-        <Text>{' '.repeat(x) + sprite}{profile.name ? `  ${profile.name}: ${last && last.who === 'pet' ? last.text : say}` : ''}</Text>
-        <Text dimColor>{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}{'  /pet <ことば>'}</Text>
+      <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
+        <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sprite + ' ' + sp(f)}</Text>
+        <Text backgroundColor="#14213d" color="#e8ecf5">{profile.name ? `${profile.name}: ${last && last.who === 'pet' ? last.text : say}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#9fb3d9">{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}{'  /kirari <ことば>'}</Text>
       </Box>
     )
   })

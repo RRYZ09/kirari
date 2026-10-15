@@ -5,6 +5,6 @@ export type Sensors = { at: number; ok: boolean; ambient?: number; proximity?: n
 
 declare module 'claude-code' {
   interface PluginState {
-    'puchi-pet': { mood: Mood; frame: number; notes: Note[]; lines: Line[]; busyTask: string; sensors: Sensors | null }
+    'kirari': { mood: Mood; frame: number; notes: Note[]; lines: Line[]; busyTask: string; sensors: Sensors | null; lastTyped: number }
   }
 }
