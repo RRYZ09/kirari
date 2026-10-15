@@ -13,7 +13,10 @@ const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
 const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
 const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
-const pinUntil = atom({ plugin: 'kirari', key: 'pinUntil' } as const, 0)   // /kirari だけ打つと 3 分出しっぱなし
+const pinUntil = atom({ plugin: 'kirari', key: 'pinUntil' } as const, 0)
+const SAY_INBOX = 'http://127.0.0.1:8790/inbox'   // web/say_server.py(iPad からの言葉)
+let saySeen = 0
+let sayBusy = false   // /kirari だけ打つと 3 分出しっぱなし
 const PUCHI_HOSTS = ['192.168.8.101', '192.168.1.14', 'puchiteya.local']
 let lastRingAt = 0
 const RING_GAP_MS = 60000   // 本体の音は 1 分に 1 回まで
@@ -97,9 +100,37 @@ const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: strin
   quiet: { name: '', sprites: ['·'], sparkle: [' '], idle: [], busy: [], system: '短く、静かに答える。' },
 }
 
+let PROF = PROFILES.kirari!
+let VOICE = false
+// きらりに話す。コマンド(/kirari)からも、iPad(web の受け口)からも同じ
+const talk = async ($: Dollar, said: string, from: 'you' | 'ipad') => {
+const profile = PROF
+const wantsVoice = VOICE
+  await update($, lastTyped, () => Date.now())
+  await update($, lines, l => [...l, { who: 'you', text: (from === 'ipad' ? '(iPad) ' : '') + said } as Line].slice(-12))
+  await update($, mood, () => 'talk')
+  if (from === 'ipad') await update($, pinUntil, () => Date.now() + 60000)
+  let reply = ''
+  try {
+    const sn = await read($, sensors)
+    const window = sn?.ok ? `(いまのぷちてゃの窓: 明るさは${light(sn.ambient)}(${sn.ambient ?? '?'})、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%、最後にさわられたのは ${sn.touchAgo ?? '?'} 秒前${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
+    const ds0 = await read($, desires)
+    const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.map(d => d.label).join('、')})` : ''
+    const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
+    reply = r.isAnswered ? r.text.trim() : (profile.busy[0] ?? '…')
+  } catch { reply = profile.busy[0] ?? '…' }
+  await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
+  void ring($, 'kira')   // きらっ(ぷちてゃ本体で)
+  await update($, mood, () => 'idle')
+  if (wantsVoice) { try { await $.audio.speak(reply) } catch { /* 読み上げが無い環境 */ } }
+  return reply
+}
+
+
 export const register: Register = (on, options) => {
   const profile = (PROFILES[String((options as { profile?: string }).profile ?? 'kirari')] ?? PROFILES.kirari)!
   const wantsVoice = Boolean((options as { voice?: boolean }).voice)
+  PROF = profile; VOICE = wantsVoice
   let noteSeq = 1
 
   on('session.start', async ($, e, next) => {
@@ -113,6 +144,16 @@ export const register: Register = (on, options) => {
     $.clock.every(10000, () => { void readSensors($) })
     void readDesires($)
     $.clock.every(60000, () => { void readDesires($) })
+    // 起動時点より前の言葉は読まない
+    try { const r0 = await $.http.fetch(SAY_INBOX + '?since=0', { method: 'GET' }); const j0 = JSON.parse(r0.text) as { items: { id: number }[] }; saySeen = j0.items.length ? j0.items[j0.items.length - 1]!.id : 0 } catch { /* 受け口が無い */ }
+    $.clock.every(2000, () => { void (async () => {
+      if (sayBusy) return
+      try {
+        const r = await $.http.fetch(`${SAY_INBOX}?since=${saySeen}`, { method: 'GET' })
+        const j = JSON.parse(r.text) as { items: { id: number; text: string }[] }
+        for (const it of j.items) { saySeen = Math.max(saySeen, it.id); sayBusy = true; try { await talk($, it.text, 'ipad') } finally { sayBusy = false } }
+      } catch { /* 受け口が無いときは黙る */ }
+    })() })
 
     return next(e)
   })
@@ -143,26 +184,10 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'kirari' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
     if (!said) { const isPinned = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (isPinned ? 0 : Date.now() + 180000)); return { text: isPinned ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む` } }
-    await update($, lastTyped, () => Date.now())
-    await update($, lines, l => [...l, { who: 'you', text: said } as Line].slice(-12))
-    await update($, mood, () => 'talk')
-    let reply = ''
-    try {
-      const sn = await read($, sensors)
-      const window = sn?.ok ? `(いまのぷちてゃの窓: 明るさは${light(sn.ambient)}(${sn.ambient ?? '?'})、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%、最後にさわられたのは ${sn.touchAgo ?? '?'} 秒前${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
-      const ds0 = await read($, desires)
-      const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.map(d => d.label).join('、')})` : ''
-      const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
-      reply = r.isAnswered ? r.text.trim() : (profile.busy[0] ?? '…')
-    } catch { reply = profile.busy[0] ?? '…' }
-    await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
-    void ring($, 'kira')   // きらっ(ぷちてゃ本体で)
-    await update($, mood, () => 'idle')
-    if (wantsVoice) { try { await $.audio.speak(reply) } catch { /* 読み上げが無い環境 */ } }
+    const reply = await talk($, said, 'you')
     return { text: `${profile.name}「${reply}」` }
   })
 
-  // Claude が働いている間だけ、入力欄の上に 2〜3 行。暇なときは何も出さない
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
    try {
     const m = await read($, mood)
