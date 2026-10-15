@@ -12,6 +12,7 @@ const sensors = atom({ plugin: 'kirari', key: 'sensors' } as const, null as Sens
 const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
 const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
+const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
 const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
 const readDesires = async ($: Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never) => {
   try {
@@ -148,11 +149,12 @@ export const register: Register = (on, options) => {
     const ev0 = await read($, lastEvent)
     const ns0 = await read($, notes)
     const hasNote = ns0.some(n => Date.now() - n.at < 20000)
-    const hasEvent = (!!ev0 && Date.now() - ev0.at < 90000) || hasNote
+    const hasEvent = (!!ev0 && Date.now() - ev0.at < 90000) || hasNote || (await read($, inboxOpen))
     if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
     const [f, ls, task, sn, ns, ev, ds] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent), read($, desires)])
+    const isOpen = await read($, inboxOpen)
     const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
     const fresh = ns.find(n => Date.now() - n.at < 20000)
     const noteSay = fresh ? `🔔 ${fresh.from}: ${fresh.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 14))}` : ''
@@ -186,7 +188,19 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
         <Text backgroundColor="#14213d">{line1}</Text>
         <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${noteSay || evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
-        <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}</Text>
+        {ns.length > 0 && (
+          <Box>
+            <Button key="inbox" label={`🔔 ${ns.length} ${isOpen ? '▾ とじる' : '▸ みる'}`} onPress={() => update($, inboxOpen, v => !v)} />
+          </Box>
+        )}
+        {isOpen && ns.slice(0, 5).map(n => (
+          <Box flexDirection="column">
+            <Button key={`n${n.id}`} label={`${n.isOpen ? '▾' : '▸'} ${n.from}: ${n.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 16))}`}
+              onPress={() => update($, notes, list => list.map(x => (x.id === n.id ? { ...x, isOpen: !x.isOpen } : x)))} />
+            {n.isOpen && <Text backgroundColor="#14213d" color="#e8ecf5">{n.text}</Text>}
+          </Box>
+        ))}
       </Box>
     )
   })
