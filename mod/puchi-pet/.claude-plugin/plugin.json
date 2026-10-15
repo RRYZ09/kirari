@@ -1,0 +1,25 @@
+{
+  "name": "puchi-pet",
+  "version": "0.1.0",
+  "description": "ターミナルにきらきらのペット(ぷちてゃ)が住む。難しい仕事を待つ間だけ話せて、よそからの知らせは右上に静かに積まれる",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "profile": {
+      "type": "string",
+      "description": "キャラクター(着せ替え)",
+      "options": [
+        "puchiteya",
+        "kirakira",
+        "quiet"
+      ],
+      "default": "puchiteya",
+      "title": "キャラクター"
+    },
+    "voice": {
+      "type": "boolean",
+      "description": "ペットの返事を読み上げる",
+      "default": false,
+      "title": "読み上げ"
+    }
+  }
+}
