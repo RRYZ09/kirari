@@ -20,6 +20,12 @@
       "description": "ペットの返事を読み上げる",
       "default": false,
       "title": "読み上げ"
+    },
+    "puchi_sound": {
+      "type": "boolean",
+      "title": "ぷちてゃで鳴らす",
+      "description": "返事や出来事の音をぷちてゃ本体で鳴らす(オフなら PC の小さい音)",
+      "default": true
     }
   }
 }

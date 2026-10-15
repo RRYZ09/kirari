@@ -45,7 +45,7 @@ const findPuchi = async ($: Dollar) => {
 const DEVICE_SE: Record<'kira' | 'poko' | 'shine', string> = { kira: 'wakeup.wav', poko: 'success.wav', shine: 'shining.wav' }
 const ring = async ($: Dollar, name: 'kira' | 'poko' | 'shine') => {
   if (name !== 'kira') { if (Date.now() - lastRingAt < RING_GAP_MS) return; lastRingAt = Date.now() }
-  if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=${DEVICE_SE[name]}`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
+  if (PUCHI_SOUND && puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=${DEVICE_SE[name]}`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
   void $.audio.play({ asset: `sounds/${name === 'shine' ? 'kira' : name}.wav` }).catch(() => {})
 }
 const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
@@ -115,6 +115,7 @@ const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: strin
 
 let PROF = PROFILES.kirari!
 let VOICE = false
+let PUCHI_SOUND = true   // /config の「ぷちてゃで鳴らす」。/kirari おと でも切り替え
 // きらりに話す。コマンド(/kirari)からも、iPad(web の受け口)からも同じ
 const talk = async ($: Dollar, said: string, from: 'you' | 'ipad') => {
 const profile = PROF
@@ -144,6 +145,7 @@ export const register: Register = (on, options) => {
   const profile = (PROFILES[String((options as { profile?: string }).profile ?? 'kirari')] ?? PROFILES.kirari)!
   const wantsVoice = Boolean((options as { voice?: boolean }).voice)
   PROF = profile; VOICE = wantsVoice
+  PUCHI_SOUND = (options as { puchi_sound?: boolean }).puchi_sound !== false
   let noteSeq = 1
 
   on('session.start', async ($, e, next) => {
@@ -197,7 +199,8 @@ export const register: Register = (on, options) => {
   // /pet こんにちは → ペットが短く返す(忙しくても暇でも答えるが、暇なときは一言だけ)
   on('command.run', { command: 'kirari' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
-    if (!said) { const isPinned = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (isPinned ? 0 : Date.now() + 180000)); return { text: isPinned ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む` } }
+    if (said === 'おと' || said === 'sound') { PUCHI_SOUND = !PUCHI_SOUND; return { text: PUCHI_SOUND ? 'ぷちてゃで鳴らすよ' : 'ぷちてゃでは鳴らさない(PC の小さい音だけ)' } }
+    if (!said) { const isPinned = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (isPinned ? 0 : Date.now() + 180000)); return { text: isPinned ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む。/kirari おと で音の切り替え` } }
     const reply = await talk($, said, 'you')
     return { text: `${profile.name}「${reply}」` }
   })
