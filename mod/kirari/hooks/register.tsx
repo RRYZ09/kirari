@@ -20,7 +20,17 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     if (!r.ok) throw new Error(String(r.status))
     const j = JSON.parse(r.text) as Record<string, unknown>
     const shake = Math.abs((num(j.gx) ?? 0)) + Math.abs((num(j.gy) ?? 0)) + Math.abs((num(j.gz) ?? 0))
-    await update($, sensors, () => ({ at: Date.now(), ok: j.online !== false, ambient: num(j.ambient), proximity: num(j.proximity), battery: num(j.battery), shake, touchAgo: num(j.touch_ago), raw: Object.keys(j).slice(0, 8).join(' ') }))
+    const touchAgo = num(j.touch_ago)
+    const prev = await read($, sensors)
+    await update($, sensors, () => ({ at: Date.now(), ok: j.online !== false, ambient: num(j.ambient), proximity: num(j.proximity), battery: num(j.battery), shake, touchAgo, raw: Object.keys(j).slice(0, 8).join(' ') }))
+    // さわられた(前回は触られていなかった → 今回 10 秒以内): ぽこっ + 一言
+    const wasTouched = (prev?.touchAgo ?? 99) < 10
+    if ((touchAgo ?? 99) < 10 && !wasTouched) {
+      void $.audio.play({ asset: 'sounds/poko.wav' }).catch(() => {})
+      $.ui.toast('ぷちてゃ、さわられたって', { timeoutMs: 3000 })
+    }
+    // 揺れた: きらっ
+    if (shake > 1 && (prev?.shake ?? 0) <= 1) { void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {}) }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
 }
 const light = (a?: number) => a === undefined ? '明るさ ?' : a > 1500 ? 'あかるい' : a > 300 ? 'ほどほど' : 'くらい'
