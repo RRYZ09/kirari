@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Line, Mood, Note, PuchiEvent, Sensors } from '../types'
+import type { Desire, Line, Mood, Note, PuchiEvent, Sensors } from '../types'
 
 const mood = atom({ plugin: 'kirari', key: 'mood' } as const, 'idle' as Mood)
 const frame = atom({ plugin: 'kirari', key: 'frame' } as const, 0)
@@ -11,7 +11,7 @@ const busyTask = atom({ plugin: 'kirari', key: 'busyTask' } as const, '')
 const sensors = atom({ plugin: 'kirari', key: 'sensors' } as const, null as Sensors | null)
 const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
-const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as string[])
+const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
 const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
 const readDesires = async ($: Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never) => {
   try {
@@ -19,7 +19,7 @@ const readDesires = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     if (!r.ok) return
     const j = JSON.parse(r.text) as { desires?: { desires?: Record<string, number>; labels?: Record<string, string> } }
     const v = j.desires?.desires ?? {}; const L = j.desires?.labels ?? {}
-    const top = Object.entries(v).sort((a, b) => b[1] - a[1]).filter(([, x]) => x >= 0.7).slice(0, 2).map(([k]) => L[k] ?? k)
+    const top = Object.entries(v).sort((a, b) => b[1] - a[1]).filter(([, x]) => x >= 0.5).slice(0, 2).map(([k, x]) => ({ label: (L[k] ?? k).replace('ありさんに会いたい', 'あいたい').replace('記録したい', 'きろく').replace('眠い', 'ねむい'), v: x }))
     await update($, desires, () => top)
   } catch { /* ダッシュボードが居ないときは前の値のまま */ }
 }
@@ -50,6 +50,9 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
 }
+const bar = (v: number, n = 5) => { const k = Math.max(0, Math.min(n, Math.round(v * n))); return '█'.repeat(k) + '░'.repeat(n - k) }
+const battWord = (b?: number) => b === undefined ? '?' : b >= 70 ? 'おおめ' : b >= 35 ? 'はんぶん' : 'すくなめ'
+const touchWord = (t?: number) => t === undefined ? '?' : t < 60 ? 'さっき' : t < 600 ? 'ちょっとまえ' : t < 3600 ? `${Math.round(t / 60)} 分まえ` : 'ずっとまえ'
 const light = (a?: number) => a === undefined ? '明るさ ?' : a > 1500 ? 'あかるい' : a > 300 ? 'ほどほど' : 'くらい'
 const near = (p?: number) => p === undefined ? '近さ ?' : p > 100 ? 'だれか近くにいる' : 'まわりは静か'
 const num = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined)
@@ -128,7 +131,7 @@ export const register: Register = (on, options) => {
       const sn = await read($, sensors)
       const window = sn?.ok ? `(いまのぷちてゃの窓: ${light(sn.ambient)}、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
       const ds0 = await read($, desires)
-      const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.join('、')})` : ''
+      const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.map(d => d.label).join('、')})` : ''
       const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
       reply = r.text.trim()
     } catch { reply = profile.busy[0] ?? '…' }
@@ -159,13 +162,16 @@ export const register: Register = (on, options) => {
     const x = t < span ? t : span * 2 - t
     const say = m === 'talk' ? '…かんがえ中' : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
-    const win = sn ? (sn.ok ? `${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 9999) < 180 ? ` ・ ${sn.touchAgo} 秒前にさわられた` : ''}` : 'いまは寝てる') : '…'
+    const win = sn ? (sn.ok
+      ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)} ・ あかるさ ${bar(Math.min(1, (sn.ambient ?? 0) / 2500))}${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}`
+      : 'いまは寝てる') : '…'
+    const want = ds.length ? ` ・ よっきゅう ${ds.map(d => `${d.label} ${bar(d.v, 4)}`).join(' ')}` : ''
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
         <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sp(f + 3) + sprite + sp(f) + (evAge < 90 ? ' ♡' : '')}</Text>
         <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
-        <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{ds.length ? `  いま「${ds.join('」「')}」` : ''}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
       </Box>
     )
   })
