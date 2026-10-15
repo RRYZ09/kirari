@@ -1,5 +1,10 @@
 # きらり ✧ — Claude Code に住む小さな光の子
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-ffe66d.svg)](LICENSE)
+[![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod%20(claudeMods)-14213d.svg)](https://docs.claude.com/en/docs/claude-code)
+[![Build Night Tokyo](https://img.shields.io/badge/Claude%20Build%20Night%20Tokyo-2026--10--15-ff8c42.svg)](https://luma.com/claude-build-night)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-ffb3d9.svg)](CONTRIBUTING.md)
+
 ![きらりの帯](docs/img/kirari_demo.gif)
 
 **きらり**は、Claude Code の mod(プラグイン)です。Claude が働いている間だけ、入力欄の上に紺色の帯が出てきて、小さな光の子「きらり」と、かにちゃんが歩きます。待ち時間だけ話し相手になって、家で暮らすロボット「ぷちてゃ」の様子を窓のようにのぞかせてくれます。
@@ -32,8 +37,8 @@ Claude Build Night Tokyo(2026-10-15、テーマ claudeMods)で、ありさん([@
 ## 動かし方
 
 ```bash
-git clone https://github.com/RRYZ09/claude-build-night-2026-10.git
-cd claude-build-night-2026-10
+git clone https://github.com/RRYZ09/kirari.git
+cd kirari
 claude --plugin-dir mod/kirari
 ```
 
@@ -91,6 +96,10 @@ docs/
 ├── pitch_1min.md                # 1 分ピッチの台本
 └── img/                         # README の画像
 ```
+
+## 手を入れる
+
+Issue・PR 歓迎です。触る場所と決まりごとは [CONTRIBUTING.md](CONTRIBUTING.md) に。ライセンスは [MIT](LICENSE)。
 
 ## 関連
 
