@@ -51,23 +51,24 @@ a{color:var(--b)}
 // きらり(左→右)とかにちゃん(右→左)が帯の中を往復。出会うと ♡✧
 (()=>{const band=document.getElementById("band"),k=document.getElementById("kira"),c=document.getElementById("crab"),pl=document.getElementById("play"),l2=document.getElementById("l2");
  const kSay=["むずかしいの、まかせてるんだね。待ってる間、話そ?","きょう、なにしたの?","ゆっくりでいいよ","ここにいるよ"];
- let t=0,blink=0;
+ let t=0,blink=0,l2At=0,l2Until=0,synced="";
+ const setL2=(txt,holdMs)=>{const now=Date.now();if(now<l2Until)return;if(l2.textContent===txt)return;if(now-l2At<2000)return;l2.textContent=txt;l2At=now;if(holdMs)l2Until=now+holdMs;};
  const step=()=>{t++;const w=band.clientWidth-28,kw=k.offsetWidth,cw=c.offsetWidth;const span=Math.max(1,w-kw),spanC=Math.max(1,w-cw);
   const tt=t%(span*2/14);const x=(tt<span/14?tt:span*2/14-tt)*14;const tc=(t*0.8+17)%(spanC*2/14);const xc=spanC-(tc<spanC/14?tc:spanC*2/14-tc)*14;
   k.style.left=x+"px";c.style.left=xc+"px";c.style.right="auto";
   const together=Math.abs(xc-x)<kw+10;pl.style.opacity=together?1:0;pl.style.left=(Math.min(x,xc)+kw)+"px";pl.textContent=t%2?"♡✧":"✧♡";
   c.textContent=(t%10===7)?"V[ ▬  ▬ ]V":"V[ ■  ■ ]V";k.textContent=(t%9===4)?"✧(｡-ᴗ-｡)✧":"✧(｡•ᴗ•｡)✧";
-  if(!l2.dataset.hold){l2.textContent=" きらり ✧ "+(together?"かにちゃんとあそんでる! ✧":kSay[Math.floor(t/20)%kSay.length]);}
+  if(!synced)setL2(" きらり ✧ "+(together?"かにちゃんとあそんでる! ✧":kSay[Math.floor(t/20)%kSay.length]));
  };step();setInterval(step,700);
  // iPad から送った言葉は、帯の 2 行目にも出す
  // PC 側の帯の状態と同期(2 秒ごと)
  const l3=document.getElementById("l3");
  setInterval(async()=>{try{const r=await fetch("say/state",{cache:"no-store"});const d=await r.json();
    if(d.l3)l3.textContent=" "+d.l3;
-   if(d.event){l2.dataset.hold="1";l2.textContent=" きらり ✧ "+d.l2+" ♡";l2.style.color="#ffb3d9";band.style.boxShadow="0 0 0 3px #ffb3d9 inset";setTimeout(()=>{delete l2.dataset.hold;band.style.boxShadow="";},4000);}
-   else if(d.l2&&!l2.dataset.hold){l2.textContent=" きらり ✧ "+d.l2;}
+   if(d.event){l2Until=0;setL2(" きらり ✧ "+d.l2+" ♡",4000);band.style.boxShadow="0 0 0 3px #ffb3d9 inset";setTimeout(()=>{band.style.boxShadow="";},4000);}
+   else if(d.l2){synced=d.l2;setL2(" きらり ✧ "+d.l2);}
  }catch{}},2000);
- window.__kiraSaid=v=>{l2.dataset.hold="1";l2.textContent=" きらり ✧ (きいてる…) "+v;setTimeout(()=>{delete l2.dataset.hold},8000)};
+ window.__kiraSaid=v=>{l2Until=0;setL2(" きらり ✧ (きいてる…) "+v,6000)};
 })();
 const f=document.getElementById("say"),t=document.getElementById("t"),st=document.getElementById("st");
 async function sendSay(v){if(!v)return;st.textContent="…";
