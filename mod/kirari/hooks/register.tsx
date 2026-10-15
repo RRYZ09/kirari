@@ -50,7 +50,7 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
 }
-const bar = (v: number, n = 5) => { const k = Math.max(0, Math.min(n, Math.round(v * n))); return '█'.repeat(k) + '░'.repeat(n - k) }
+const bar = (v: number, n = 5) => { const k = Math.max(0, Math.min(n, Math.round(v * n))); return '♥'.repeat(k) + '♡'.repeat(n - k) }
 const battWord = (b?: number) => b === undefined ? '?' : b >= 70 ? 'おおめ' : b >= 35 ? 'はんぶん' : 'すくなめ'
 const touchWord = (t?: number) => t === undefined ? '?' : t < 60 ? 'さっき' : t < 600 ? 'ちょっとまえ' : t < 3600 ? `${Math.round(t / 60)} 分まえ` : 'ずっとまえ'
 const light = (a?: number) => a === undefined ? '明るさ ?' : a > 1500 ? 'あかるい' : a > 300 ? 'ほどほど' : 'くらい'
@@ -163,9 +163,9 @@ export const register: Register = (on, options) => {
     const say = m === 'talk' ? '…かんがえ中' : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
     const win = sn ? (sn.ok
-      ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)} ・ あかるさ ${bar(Math.min(1, (sn.ambient ?? 0) / 2500))}${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}`
+      ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}`
       : 'いまは寝てる') : '…'
-    const want = ds.length ? ` ・ よっきゅう ${ds.map(d => `${d.label} ${bar(d.v, 4)}`).join(' ')}` : ''
+    const want = ds.length ? ` ・ よっきゅう ${ds.map(d => `${d.label} ${bar(d.v, 3)}`).join(' ')}` : ''
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
