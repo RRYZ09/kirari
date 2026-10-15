@@ -187,7 +187,7 @@ export const register: Register = (on, options) => {
     const x = t < span ? t : span * 2 - t
     const last = ls.length ? ls[ls.length - 1] : null
     // かにちゃん(Anthropic 風の橙のかに)は逆向きに横歩き。近づくと一緒に遊ぶ
-    const crab = 'V(•ᴥ•)V'
+    const crab = f % 10 === 7 ? 'V[ ▬  ▬ ]V' : 'V[ ■  ■ ]V'   // ありさんのかにちゃん。たまに瞬き
     const spanC = Math.max(1, cols - crab.length - 2)
     const tc = Math.floor(f * 0.8 + 17) % (spanC * 2)
     const xc = spanC - (tc < spanC ? tc : spanC * 2 - tc)
