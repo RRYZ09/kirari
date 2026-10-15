@@ -169,8 +169,10 @@ export const register: Register = (on, options) => {
     const isLonely = m === 'idle' && quietFor > QUIET_MS
     const ev0 = await read($, lastEvent)
     const ns0 = await read($, notes)
-    const hasNote = ns0.some(n => Date.now() - n.at < 20000)
-    const hasEvent = (!!ev0 && Date.now() - ev0.at < 90000) || hasNote || (await read($, inboxOpen))
+    // 人が打っているときは、出来事や知らせがあっても 10 秒で引っ込む(開いた一覧だけは残す)
+    const userBusy = quietFor < 10000
+    const hasNote = !userBusy && ns0.some(n => Date.now() - n.at < 20000)
+    const hasEvent = (!userBusy && !!ev0 && Date.now() - ev0.at < 30000) || hasNote || (await read($, inboxOpen))
     if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
@@ -180,7 +182,7 @@ export const register: Register = (on, options) => {
     const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
     const fresh = ns.find(n => Date.now() - n.at < 20000)
     const noteSay = fresh ? `🔔 ${fresh.from}: ${fresh.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 14))}` : ''
-    const evSay = ev && evAge < 90 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
+    const evSay = ev && evAge < 30 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
     const sprite = profile.sprites[f % profile.sprites.length]
     const span = Math.max(1, cols - sprite.length - 2)
     const t = f % (span * 2)
@@ -194,7 +196,7 @@ export const register: Register = (on, options) => {
     const together = Math.abs(xc - x) < 6
     const playSay = together && f % 4 < 2 ? 'かにちゃんとあそんでる! ' + sp(f) : ''
     const say = m === 'talk' ? '…かんがえ中' : playSay ? playSay : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
-    const kira = sp(f + 3) + sprite + sp(f) + (evAge < 90 ? '♡' : '')
+    const kira = sp(f + 3) + sprite + sp(f) + (evAge < 30 ? '♡' : '')
     const left = Math.min(x, xc), right = Math.max(x, xc)
     const first = x <= xc ? kira : crab, second = x <= xc ? crab : kira
     const gap = Math.max(0, right - left - first.length)
