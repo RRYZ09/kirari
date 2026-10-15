@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Line, Mood, Note, Sensors } from '../types'
+import type { Line, Mood, Note, PuchiEvent, Sensors } from '../types'
 
 const mood = atom({ plugin: 'kirari', key: 'mood' } as const, 'idle' as Mood)
 const frame = atom({ plugin: 'kirari', key: 'frame' } as const, 0)
@@ -10,6 +10,7 @@ const lines = atom({ plugin: 'kirari', key: 'lines' } as const, [] as Line[])
 const busyTask = atom({ plugin: 'kirari', key: 'busyTask' } as const, '')
 const sensors = atom({ plugin: 'kirari', key: 'sensors' } as const, null as Sensors | null)
 const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
+const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
 const QUIET_MS = 60000   // 人が 1 分打たないと、きらりが出てくる
 // ぷちてゃ(家の M5Stack)の /sensors。応答が無ければ「寝てる」
 // ダッシュボード経由(m5-petit 上)。ぷちてゃ本体の IP は変わるので直接は叩かない
@@ -28,9 +29,13 @@ const readSensors = async ($: Parameters<Parameters<Register>[0]>[2] extends (..
     if ((touchAgo ?? 99) < 10 && !wasTouched) {
       void $.audio.play({ asset: 'sounds/poko.wav' }).catch(() => {})
       $.ui.toast('ぷちてゃ、さわられたって', { timeoutMs: 3000 })
+      await update($, lastEvent, () => ({ kind: 'touch', at: Date.now() }))
     }
     // 揺れた: きらっ
-    if (shake > 1 && (prev?.shake ?? 0) <= 1) { void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {}) }
+    if (shake > 1 && (prev?.shake ?? 0) <= 1) {
+      void $.audio.play({ asset: 'sounds/kira.wav' }).catch(() => {})
+      await update($, lastEvent, () => ({ kind: 'shake', at: Date.now() }))
+    }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
 }
 const light = (a?: number) => a === undefined ? '明るさ ?' : a > 1500 ? 'あかるい' : a > 300 ? 'ほどほど' : 'くらい'
@@ -69,7 +74,7 @@ export const register: Register = (on, options) => {
     // ペットの歩み(400ms ごとに 1 コマ)
     $.clock.every(700, () => { void update($, frame, n => (n + 1) % 100000) })
     void readSensors($)
-    $.clock.every(20000, () => { void readSensors($) })
+    $.clock.every(10000, () => { void readSensors($) })
 
     return next(e)
   })
@@ -123,10 +128,14 @@ export const register: Register = (on, options) => {
     const m = await read($, mood)
     const quietFor = Date.now() - (await read($, lastTyped))
     const isLonely = m === 'idle' && quietFor > QUIET_MS
-    if ((m === 'idle' && !isLonely) || e.props.hasSurvey) return next(e)
+    const ev0 = await read($, lastEvent)
+    const hasEvent = !!ev0 && Date.now() - ev0.at < 90000
+    if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
-    const [f, ls, task, sn, ns] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes)])
+    const [f, ls, task, sn, ns, ev] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent)])
+    const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
+    const evSay = ev && evAge < 90 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
     const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const sprite = profile.sprites[f % profile.sprites.length]
     const span = Math.max(1, cols - sprite.length - 2)
@@ -134,12 +143,12 @@ export const register: Register = (on, options) => {
     const x = t < span ? t : span * 2 - t
     const say = m === 'talk' ? '…かんがえ中' : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
-    const win = sn ? (sn.ok ? `${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 99) < 10 ? ' ・ さわられた' : ''}` : 'いまは寝てる') : '…'
+    const win = sn ? (sn.ok ? `${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 9999) < 180 ? ` ・ ${sn.touchAgo} 秒前にさわられた` : ''}` : 'いまは寝てる') : '…'
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
         <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sprite + ' ' + sp(f)}</Text>
-        <Text backgroundColor="#14213d" color="#e8ecf5">{profile.name ? `${profile.name}: ${last && last.who === 'pet' ? last.text : say}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#e8ecf5">{profile.name ? `${profile.name}: ${evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
         <Text backgroundColor="#14213d" color="#9fb3d9">{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}{'  /kirari <ことば>'}</Text>
       </Box>
     )
