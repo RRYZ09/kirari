@@ -1,18 +1,18 @@
 {
   "name": "puchi-pet",
   "version": "0.1.0",
-  "description": "ターミナルにきらきらのペット(ぷちてゃ)が住む。難しい仕事を待つ間だけ話せて、よそからの知らせは右上に静かに積まれる",
+  "description": "ターミナルに住む小さな光の子「きらり」。難しい仕事を待つ間だけ話せて、ぷちてゃのセンサーを窓のようにのぞく。よそからの知らせは右上に静かに積まれる",
   "types": "./types/index.d.ts",
   "userConfig": {
     "profile": {
       "type": "string",
       "description": "キャラクター(着せ替え)",
       "options": [
-        "puchiteya",
+        "kirari",
         "kirakira",
         "quiet"
       ],
-      "default": "puchiteya",
+      "default": "kirari",
       "title": "キャラクター"
     },
     "voice": {
