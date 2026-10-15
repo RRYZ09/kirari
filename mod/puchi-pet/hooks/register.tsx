@@ -52,6 +52,7 @@ export const register: Register = (on, options) => {
   let noteSeq = 1
 
   on('session.start', async ($, e, next) => {
+    void $.ui.close({ id: 'puchi-pet' }).catch(() => {})   // 前の版が開いたペインを片付ける
     await $.command.register({ name: 'pet', description: `${profile.name || 'ペット'}に話しかける(待ち時間用)。例: /pet こんにちは` })
     // ペットの歩み(400ms ごとに 1 コマ)
     $.clock.every(2000, () => { void update($, frame, n => (n + 1) % 1000) })
