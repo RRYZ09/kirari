@@ -97,7 +97,7 @@ const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: strin
 }
 
 export const register: Register = (on, options) => {
-  const profile = PROFILES[String((options as { profile?: string }).profile ?? 'kirari')] ?? PROFILES.kirari
+  const profile = (PROFILES[String((options as { profile?: string }).profile ?? 'kirari')] ?? PROFILES.kirari)!
   const wantsVoice = Boolean((options as { voice?: boolean }).voice)
   let noteSeq = 1
 
@@ -152,7 +152,7 @@ export const register: Register = (on, options) => {
       const ds0 = await read($, desires)
       const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.map(d => d.label).join('、')})` : ''
       const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
-      reply = r.text.trim()
+      reply = r.isAnswered ? r.text.trim() : (profile.busy[0] ?? '…')
     } catch { reply = profile.busy[0] ?? '…' }
     await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
     void ring($, 'kira')   // きらっ(ぷちてゃ本体で)
@@ -176,17 +176,15 @@ export const register: Register = (on, options) => {
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
     const [f, ls, task, sn, ns, ev, ds] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent), read($, desires)])
     const isOpen = await read($, inboxOpen)
+    const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
     const fresh = ns.find(n => Date.now() - n.at < 20000)
     const noteSay = fresh ? `🔔 ${fresh.from}: ${fresh.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 14))}` : ''
     const evSay = ev && evAge < 90 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
-    const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const sprite = profile.sprites[f % profile.sprites.length]
     const span = Math.max(1, cols - sprite.length - 2)
     const t = f % (span * 2)
     const x = t < span ? t : span * 2 - t
-    const playSay = together && f % 4 < 2 ? 'かにちゃんとあそんでる! ' + sp(f) : ''
-    const say = m === 'talk' ? '…かんがえ中' : playSay ? playSay : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
     // かにちゃん(Anthropic 風の橙のかに)は逆向きに横歩き。近づくと一緒に遊ぶ
     const crab = 'V(•ᴥ•)V'
@@ -194,6 +192,8 @@ export const register: Register = (on, options) => {
     const tc = Math.floor(f * 0.8 + 17) % (spanC * 2)
     const xc = spanC - (tc < spanC ? tc : spanC * 2 - tc)
     const together = Math.abs(xc - x) < 6
+    const playSay = together && f % 4 < 2 ? 'かにちゃんとあそんでる! ' + sp(f) : ''
+    const say = m === 'talk' ? '…かんがえ中' : playSay ? playSay : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const kira = sp(f + 3) + sprite + sp(f) + (evAge < 90 ? '♡' : '')
     const left = Math.min(x, xc), right = Math.max(x, xc)
     const first = x <= xc ? kira : crab, second = x <= xc ? crab : kira
