@@ -23,7 +23,7 @@ const findPuchi = async ($: Dollar) => {
   puchiHost = ''
 }
 // 本体で鳴らす。本体に届かないときは PC の音(小さい)で代える
-const DEVICE_SE: Record<'kira' | 'poko' | 'shine', string> = { kira: 'wakeup.wav', poko: 'happy_bell.wav', shine: 'shining.wav' }
+const DEVICE_SE: Record<'kira' | 'poko' | 'shine', string> = { kira: 'wakeup.wav', poko: 'success.wav', shine: 'shining.wav' }
 const ring = async ($: Dollar, name: 'kira' | 'poko' | 'shine') => {
   if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=${DEVICE_SE[name]}`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
   void $.audio.play({ asset: `sounds/${name === 'shine' ? 'kira' : name}.wav` }).catch(() => {})
