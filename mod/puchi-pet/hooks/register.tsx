@@ -3,7 +3,6 @@ import type { Register } from 'claude-code'
 
 import type { Line, Mood, Note, Sensors } from '../types'
 
-const PANE = 'puchi-pet'
 const mood = atom({ plugin: 'puchi-pet', key: 'mood' } as const, 'idle' as Mood)
 const frame = atom({ plugin: 'puchi-pet', key: 'frame' } as const, 0)
 const notes = atom({ plugin: 'puchi-pet', key: 'notes' } as const, [] as Note[])
@@ -54,7 +53,6 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'pet', description: `${profile.name || 'ペット'}に話しかける(待ち時間用)。例: /pet こんにちは` })
-    void $.ui.open({ id: PANE, title: profile.name ? `${profile.name} ✧` : 'pet' })
     // ペットの歩み(400ms ごとに 1 コマ)
     $.clock.every(2000, () => { void update($, frame, n => (n + 1) % 1000) })
     void readSensors($)
@@ -87,7 +85,7 @@ export const register: Register = (on, options) => {
   // /pet こんにちは → ペットが短く返す(忙しくても暇でも答えるが、暇なときは一言だけ)
   on('command.run', { command: 'pet' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
-    if (!said) { await $.ui.open({ id: PANE, title: profile.name ? `${profile.name} ✧` : 'pet' }); return { text: `${profile.name} のペインを開いたよ。/pet <ことば> で話せる` } }
+    if (!said) return { text: `/pet <ことば> で ${profile.name} に話せるよ(Claude が働いている間だけ、入力欄の上に出てくる)` }
     await update($, lines, l => [...l, { who: 'you', text: said } as Line].slice(-12))
     await update($, mood, () => 'talk')
     let reply = ''
@@ -103,42 +101,25 @@ export const register: Register = (on, options) => {
     return { text: `${profile.name}「${reply}」` }
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const [m, f, ns, ls, task, sn] = await Promise.all([read($, mood), read($, frame), read($, notes), read($, lines), read($, busyTask), read($, sensors)])
-    const cols = Math.max(20, (e.viewport?.columns ?? 40) - 2)
+  // Claude が働いている間だけ、入力欄の上に 2〜3 行。暇なときは何も出さない
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const m = await read($, mood)
+    if (m === 'idle' || e.props.hasSurvey) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    const [f, ls, task, sn, ns] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes)])
+    const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
     const sprite = profile.sprites[f % profile.sprites.length]
-    // 左右にゆっくり歩く
-    const span = Math.max(1, cols - sprite.length - 2)
-    const t = (m === 'busy' ? Math.floor(f / 4) : f) % (span * 2)
+    const span = Math.max(1, Math.min(cols - sprite.length - 2, 24))
+    const t = Math.floor(f / 2) % (span * 2)
     const x = t < span ? t : span * 2 - t
-    const sp = (i: number) => profile.sparkle[(f + i) % profile.sparkle.length]
-    const walk = ' '.repeat(x) + sprite
-    const sf = Math.floor(f / 5)
-    const stars = Array.from({ length: Math.min(4, Math.floor(cols / 8)) }, (_, i) => ' '.repeat(((sf * 5 + i * 11) % cols)).slice(0, cols) + sp(i)).join('\n')
-    const hint = m === 'busy'
-      ? `${profile.name}: ${profile.busy[f % Math.max(1, profile.busy.length)] ?? ''}${task ? `  (まかせてる: ${task})` : ''}`
-      : m === 'talk' ? `${profile.name}: …かんがえ中` : (profile.idle[Math.floor(f / 25) % Math.max(1, profile.idle.length)] ?? '')
+    const say = m === 'talk' ? '…かんがえ中' : (profile.busy[Math.floor(f / 6) % Math.max(1, profile.busy.length)] ?? '')
+    const last = ls.length ? ls[ls.length - 1] : null
+    const win = sn ? (sn.ok ? `${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 99) < 10 ? ' ・ さわられた' : ''}` : 'いまは寝てる') : '…'
 
     return (
       <Box flexDirection="column">
-        <Text dimColor>{stars.split('\n')[sf % 2] ?? ''}</Text>
-        <Text>{walk}</Text>
-        <Text dimColor>{hint}</Text>
-        <Text dimColor>{sn ? (sn.ok ? `ぷちてゃの窓: ${light(sn.ambient)} ・ ${near(sn.proximity)} ・ 電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}${(sn.touchAgo ?? 99) < 10 ? ' ・ さわられた' : ''}` : 'ぷちてゃの窓: いまは寝てる') : 'ぷちてゃの窓: …'}</Text>
-        <Text dimColor>{m === 'busy' ? '待ち時間。/pet <ことば> で話せる' : '/pet <ことば>'}</Text>
-        {ls.length > 0 && <Text dimColor>──</Text>}
-        {ls.slice(-6).map(l => (
-          <Text dimColor={l.who === 'you'}>{l.who === 'you' ? 'あなた: ' : `${profile.name}: `}{l.text}</Text>
-        ))}
-        {ns.length > 0 && <Text dimColor>── 知らせ {ns.length}</Text>}
-        {ns.slice(0, 5).map(n => (
-          <Box flexDirection="column">
-            <Button key={`n${n.id}`} label={`${n.isOpen ? '▾' : '▸'} ${n.from}: ${n.text.replace(/\s+/g, ' ').slice(0, Math.max(10, cols - 14))}`}
-              onPress={() => update($, notes, list => list.map(x => (x.id === n.id ? { ...x, isOpen: !x.isOpen } : x)))} />
-            {n.isOpen && <Text>{n.text}</Text>}
-          </Box>
-        ))}
+        <Text>{' '.repeat(x) + sprite}{profile.name ? `  ${profile.name}: ${last && last.who === 'pet' ? last.text : say}` : ''}</Text>
+        <Text dimColor>{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}  /pet <ことば></Text>
       </Box>
     )
   })
