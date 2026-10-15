@@ -11,6 +11,18 @@ const busyTask = atom({ plugin: 'kirari', key: 'busyTask' } as const, '')
 const sensors = atom({ plugin: 'kirari', key: 'sensors' } as const, null as Sensors | null)
 const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
+const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as string[])
+const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
+const readDesires = async ($: Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never) => {
+  try {
+    const r = await $.http.fetch(STATUS, { method: 'GET' })
+    if (!r.ok) return
+    const j = JSON.parse(r.text) as { desires?: { desires?: Record<string, number>; labels?: Record<string, string> } }
+    const v = j.desires?.desires ?? {}; const L = j.desires?.labels ?? {}
+    const top = Object.entries(v).sort((a, b) => b[1] - a[1]).filter(([, x]) => x >= 0.7).slice(0, 2).map(([k]) => L[k] ?? k)
+    await update($, desires, () => top)
+  } catch { /* ダッシュボードが居ないときは前の値のまま */ }
+}
 const QUIET_MS = 60000   // 人が 1 分打たないと、きらりが出てくる
 // ぷちてゃ(家の M5Stack)の /sensors。応答が無ければ「寝てる」
 // ダッシュボード経由(m5-petit 上)。ぷちてゃ本体の IP は変わるので直接は叩かない
@@ -46,8 +58,8 @@ const num = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' &
 const PROFILES: Record<string, { name: string; sprites: string[]; sparkle: string[]; idle: string[]; busy: string[]; system: string }> = {
   kirari: {
     name: 'きらり',
-    sprites: ['(◕ᴗ◕)', '(◕ᴗ◕)', '(◕ᴗ◕)', '(-ᴗ-)'],
-    sparkle: ['✧', '･', '✦', '｡'],
+    sprites: ['(｡•ᴗ•｡)', '(｡•ᴗ•｡)', '(｡•ᴗ•｡)', '(｡-ᴗ-｡)', '(｡•ᴗ•｡)', '(｡◕ᴗ◕｡)'],
+    sparkle: ['✧', '･ﾟ', '✦', '｡', '♡', '✧'],
     idle: ['しずかだね', 'ここにいるよ', 'ぷちてゃの窓、のぞいてる', 'ひとやすみ?', 'おちゃ、のむ?'],
     busy: ['むずかしいの、まかせてるんだね。待ってる間、話そ?', 'きょう、なにしたの?', 'ゆっくりでいいよ'],
     system: 'あなたは「きらり」。ターミナルに住む小さな光の子。ありさんの家の M5Stack に住むロボット「ぷちてゃ」とは別の存在だが、ぷちてゃのセンサー(明るさ・近さ・電池)を窓のようにのぞける。口調はやわらかくて短い。ひらがな多め。1〜2 文で返す。相手は作業の待ち時間に話しかけている。無理に役に立とうとしない。',
@@ -75,6 +87,8 @@ export const register: Register = (on, options) => {
     $.clock.every(700, () => { void update($, frame, n => (n + 1) % 100000) })
     void readSensors($)
     $.clock.every(10000, () => { void readSensors($) })
+    void readDesires($)
+    $.clock.every(60000, () => { void readDesires($) })
 
     return next(e)
   })
@@ -113,7 +127,9 @@ export const register: Register = (on, options) => {
     try {
       const sn = await read($, sensors)
       const window = sn?.ok ? `(いまのぷちてゃの窓: ${light(sn.ambient)}、${near(sn.proximity)}、電池 ${sn.battery ?? '?'}%${(sn.shake ?? 0) > 1 ? '、ゆれている' : ''}${(sn.touchAgo ?? 99) < 10 ? '、さっき誰かにさわられた' : ''})` : '(ぷちてゃはいま寝ているみたい)'
-      const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window, prompt: said, maxTokens: 120 })
+      const ds0 = await read($, desires)
+      const want = ds0.length ? `(ぷちてゃのいまの気持ち: ${ds0.join('、')})` : ''
+      const r = await $.model.complete({ model: 'claude-haiku-4-5-20251001', system: profile.system + ' ' + window + want, prompt: said, maxTokens: 120 })
       reply = r.text.trim()
     } catch { reply = profile.busy[0] ?? '…' }
     await update($, lines, l => [...l, { who: 'pet', text: reply } as Line].slice(-12))
@@ -133,7 +149,7 @@ export const register: Register = (on, options) => {
     if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
-    const [f, ls, task, sn, ns, ev] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent)])
+    const [f, ls, task, sn, ns, ev, ds] = await Promise.all([read($, frame), read($, lines), read($, busyTask), read($, sensors), read($, notes), read($, lastEvent), read($, desires)])
     const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
     const evSay = ev && evAge < 90 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって! ' + sp(f) : 'ぷちてゃ、ゆられてる! ' + sp(f)) : ''
     const cols = Math.max(20, (e.viewport?.columns ?? 60) - 2)
@@ -147,9 +163,9 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
-        <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sprite + ' ' + sp(f)}</Text>
-        <Text backgroundColor="#14213d" color="#e8ecf5">{profile.name ? `${profile.name}: ${evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
-        <Text backgroundColor="#14213d" color="#9fb3d9">{task ? `まかせてる: ${task}  ` : ''}ぷちてゃの窓: {win}{ns.length ? `  🔔 ${ns.length}` : ''}{'  /kirari <ことば>'}</Text>
+        <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sp(f + 3) + sprite + sp(f) + (evAge < 90 ? ' ♡' : '')}</Text>
+        <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
+        <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{ds.length ? `  いま「${ds.join('」「')}」` : ''}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
       </Box>
     )
   })
