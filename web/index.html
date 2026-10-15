@@ -60,6 +60,13 @@ a{color:var(--b)}
   if(!l2.dataset.hold){l2.textContent=" きらり ✧ "+(together?"かにちゃんとあそんでる! ✧":kSay[Math.floor(t/20)%kSay.length]);}
  };step();setInterval(step,700);
  // iPad から送った言葉は、帯の 2 行目にも出す
+ // PC 側の帯の状態と同期(2 秒ごと)
+ const l3=document.getElementById("l3");
+ setInterval(async()=>{try{const r=await fetch("say/state",{cache:"no-store"});const d=await r.json();
+   if(d.l3)l3.textContent=" "+d.l3;
+   if(d.event){l2.dataset.hold="1";l2.textContent=" きらり ✧ "+d.l2+" ♡";l2.style.color="#ffb3d9";band.style.boxShadow="0 0 0 3px #ffb3d9 inset";setTimeout(()=>{delete l2.dataset.hold;band.style.boxShadow="";},4000);}
+   else if(d.l2&&!l2.dataset.hold){l2.textContent=" きらり ✧ "+d.l2;}
+ }catch{}},2000);
  window.__kiraSaid=v=>{l2.dataset.hold="1";l2.textContent=" きらり ✧ (きいてる…) "+v;setTimeout(()=>{delete l2.dataset.hold},8000)};
 })();
 const f=document.getElementById("say"),t=document.getElementById("t"),st=document.getElementById("st");

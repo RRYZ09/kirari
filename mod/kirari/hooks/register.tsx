@@ -15,6 +15,19 @@ const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire
 const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
 const pinUntil = atom({ plugin: 'kirari', key: 'pinUntil' } as const, 0)
 const SAY_INBOX = 'http://127.0.0.1:8790/inbox'   // web/say_server.py(iPad からの言葉)
+const SAY_STATE = 'http://127.0.0.1:8790/state'   // 帯の状態を iPad のページへ
+const pushState = async ($: Dollar) => {
+  try {
+    const [m, ls, sn, ds, ev] = await Promise.all([read($, mood), read($, lines), read($, sensors), read($, desires), read($, lastEvent)])
+    const evAge = ev ? Math.round((Date.now() - ev.at) / 1000) : 999
+    const evSay = ev && evAge < 30 ? (ev.kind === 'touch' ? 'ぷちてゃ、さわられたって!' : 'ぷちてゃ、ゆられてる!') : ''
+    const last = ls.length ? ls[ls.length - 1] : null
+    const l2 = evSay || (last && last.who === 'pet' ? last.text : '')
+    const win = sn ? (sn.ok ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 3 ? ' ・ ゆれてる!' : ''}` : 'いまは寝てる') : '…'
+    const want = ds.length ? ` ・ よっきゅう ${ds.map(d => `${d.label} ${bar(d.v, 3)}`).join(' ')}` : ''
+    await $.http.fetch(SAY_STATE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mood: m, l2, l3: `ぷちてゃ: ${win}${want}`, event: ev && evAge < 30 ? ev.kind : '', you: last && last.who === 'you' ? last.text : '' }) })
+  } catch { /* 受け口が無い */ }
+}
 let saySeen = 0
 let sayBusy = false   // /kirari だけ打つと 3 分出しっぱなし
 const PUCHI_HOSTS = ['192.168.8.101', '192.168.1.14', 'puchiteya.local']
@@ -146,6 +159,7 @@ export const register: Register = (on, options) => {
     $.clock.every(60000, () => { void readDesires($) })
     // 起動時点より前の言葉は読まない
     try { const r0 = await $.http.fetch(SAY_INBOX + '?since=0', { method: 'GET' }); const j0 = JSON.parse(r0.text) as { items: { id: number }[] }; saySeen = j0.items.length ? j0.items[j0.items.length - 1]!.id : 0 } catch { /* 受け口が無い */ }
+    $.clock.every(2000, () => { void pushState($) })
     $.clock.every(2000, () => { void (async () => {
       if (sayBusy) return
       try {
