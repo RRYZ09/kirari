@@ -23,9 +23,10 @@ const findPuchi = async ($: Dollar) => {
   puchiHost = ''
 }
 // 本体で鳴らす。本体に届かないときは PC の音(小さい)で代える
-const ring = async ($: Dollar, name: 'kira' | 'poko') => {
-  if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=kirari_${name}.wav`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
-  void $.audio.play({ asset: `sounds/${name}.wav` }).catch(() => {})
+const DEVICE_SE: Record<'kira' | 'poko' | 'shine', string> = { kira: 'wakeup.wav', poko: 'pon.wav', shine: 'shining.wav' }
+const ring = async ($: Dollar, name: 'kira' | 'poko' | 'shine') => {
+  if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=${DEVICE_SE[name]}`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
+  void $.audio.play({ asset: `sounds/${name === 'shine' ? 'kira' : name}.wav` }).catch(() => {})
 }
 const STATUS = 'http://127.0.0.1:8765/api/puchiteya/status'
 const readDesires = async ($: Dollar) => {
@@ -59,7 +60,7 @@ const readSensors = async ($: Dollar) => {
     }
     // 揺れた: きらっ
     if (shake > 1 && (prev?.shake ?? 0) <= 1) {
-      void ring($, 'kira')
+      void ring($, 'shine')
       await update($, lastEvent, () => ({ kind: 'shake', at: Date.now() }))
     }
   } catch { await update($, sensors, prev => ({ at: Date.now(), ok: false, ambient: prev?.ambient, proximity: prev?.proximity, battery: prev?.battery, shake: 0, touchAgo: prev?.touchAgo, raw: prev?.raw ?? '' })) }
