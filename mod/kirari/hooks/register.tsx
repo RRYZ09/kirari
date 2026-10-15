@@ -14,6 +14,8 @@ const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as 
 const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
 const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
 const PUCHI_HOSTS = ['192.168.8.101', '192.168.1.14', 'puchiteya.local']
+let lastRingAt = 0
+const RING_GAP_MS = 60000   // 本体の音は 1 分に 1 回まで
 let puchiHost = ''   // ぷちてゃ本体の、いま届くアドレス(無ければ '')
 type Dollar = Parameters<Parameters<Register>[0]>[2] extends (...a: infer A) => unknown ? A[0] : never
 const findPuchi = async ($: Dollar) => {
@@ -25,6 +27,7 @@ const findPuchi = async ($: Dollar) => {
 // 本体で鳴らす。本体に届かないときは PC の音(小さい)で代える
 const DEVICE_SE: Record<'kira' | 'poko' | 'shine', string> = { kira: 'wakeup.wav', poko: 'success.wav', shine: 'shining.wav' }
 const ring = async ($: Dollar, name: 'kira' | 'poko' | 'shine') => {
+  if (name !== 'kira') { if (Date.now() - lastRingAt < RING_GAP_MS) return; lastRingAt = Date.now() }
   if (puchiHost) { try { await $.http.fetch(`http://${puchiHost}/se_play?name=${DEVICE_SE[name]}`, { method: 'GET' }); return } catch { /* 落ちたら PC */ } }
   void $.audio.play({ asset: `sounds/${name === 'shine' ? 'kira' : name}.wav` }).catch(() => {})
 }
@@ -59,7 +62,7 @@ const readSensors = async ($: Dollar) => {
       await update($, lastEvent, () => ({ kind: 'touch', at: Date.now() }))
     }
     // 揺れた: きらっ
-    if (shake > 1 && (prev?.shake ?? 0) <= 1) {
+    if (shake > 3 && (prev?.shake ?? 0) <= 3) {
       void ring($, 'shine')
       await update($, lastEvent, () => ({ kind: 'shake', at: Date.now() }))
     }
@@ -160,6 +163,7 @@ export const register: Register = (on, options) => {
 
   // Claude が働いている間だけ、入力欄の上に 2〜3 行。暇なときは何も出さない
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+   try {
     const m = await read($, mood)
     const quietFor = Date.now() - (await read($, lastTyped))
     const isLonely = m === 'idle' && quietFor > QUIET_MS
@@ -195,15 +199,15 @@ export const register: Register = (on, options) => {
     const first = x <= xc ? kira : crab, second = x <= xc ? crab : kira
     const gap = Math.max(0, right - left - first.length)
     const play = together ? (f % 2 ? '♡✧' : '✧♡') : ''
-    const line1 = h(Text, { backgroundColor: '#14213d', color: x <= xc ? '#ffe66d' : '#e8814c' }, ' '.repeat(left) + first, h(Text, { backgroundColor: '#14213d', color: '#ffb3d9' }, together ? play.padStart(Math.max(gap, play.length)) : ' '.repeat(gap)), h(Text, { backgroundColor: '#14213d', color: x <= xc ? '#e8814c' : '#ffe66d' }, second))
+    const line1 = ' '.repeat(left) + first + (together ? play.padStart(Math.max(gap, play.length)) : ' '.repeat(gap)) + second
     const win = sn ? (sn.ok
-      ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}`
+      ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 3 ? ' ・ ゆれてる!' : ''}`
       : 'いまは寝てる') : '…'
     const want = ds.length ? ` ・ よっきゅう ${ds.map(d => `${d.label} ${bar(d.v, 3)}`).join(' ')}` : ''
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
-        <Text backgroundColor="#14213d">{line1}</Text>
+        <Text backgroundColor="#14213d" color="#ffe66d">{line1}</Text>
         <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${noteSay || evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
         <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}</Text>
         {ns.length > 0 && (
@@ -220,5 +224,6 @@ export const register: Register = (on, options) => {
         ))}
       </Box>
     )
+   } catch { return next(e) }
   })
 }
