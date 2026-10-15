@@ -13,6 +13,7 @@ const lastTyped = atom({ plugin: 'kirari', key: 'lastTyped' } as const, 0)
 const lastEvent = atom({ plugin: 'kirari', key: 'lastEvent' } as const, null as PuchiEvent | null)
 const desires = atom({ plugin: 'kirari', key: 'desires' } as const, [] as Desire[])
 const inboxOpen = atom({ plugin: 'kirari', key: 'inboxOpen' } as const, false)
+const pinUntil = atom({ plugin: 'kirari', key: 'pinUntil' } as const, 0)   // /kirari だけ打つと 3 分出しっぱなし
 const PUCHI_HOSTS = ['192.168.8.101', '192.168.1.14', 'puchiteya.local']
 let lastRingAt = 0
 const RING_GAP_MS = 60000   // 本体の音は 1 分に 1 回まで
@@ -141,7 +142,7 @@ export const register: Register = (on, options) => {
   // /pet こんにちは → ペットが短く返す(忙しくても暇でも答えるが、暇なときは一言だけ)
   on('command.run', { command: 'kirari' }, async ($, e) => {
     const said = String(e.args ?? '').trim()
-    if (!said) return { text: `/kirari <ことば> で ${profile.name} に話せるよ(Claude が働いている間だけ、入力欄の上に出てくる)` }
+    if (!said) { const on = (await read($, pinUntil)) > Date.now(); await update($, pinUntil, () => (on ? 0 : Date.now() + 180000)); return { text: on ? `${profile.name} を引っ込めたよ` : `${profile.name} を 3 分出しておくね。/kirari <ことば> で話せる。もう一度 /kirari で引っ込む` } }
     await update($, lastTyped, () => Date.now())
     await update($, lines, l => [...l, { who: 'you', text: said } as Line].slice(-12))
     await update($, mood, () => 'talk')
@@ -172,7 +173,7 @@ export const register: Register = (on, options) => {
     // 人が打っているときは、出来事や知らせがあっても 10 秒で引っ込む(開いた一覧だけは残す)
     const userBusy = quietFor < 10000
     const hasNote = !userBusy && ns0.some(n => Date.now() - n.at < 20000)
-    const hasEvent = (!userBusy && !!ev0 && Date.now() - ev0.at < 30000) || hasNote || (await read($, inboxOpen))
+    const hasEvent = (!userBusy && !!ev0 && Date.now() - ev0.at < 30000) || hasNote || (await read($, inboxOpen)) || (await read($, pinUntil)) > Date.now()
     if ((m === 'idle' && !isLonely && !hasEvent) || e.props.hasSurvey) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const sp = (i: number) => profile.sparkle[i % profile.sparkle.length]
