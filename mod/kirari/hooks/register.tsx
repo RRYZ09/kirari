@@ -162,8 +162,21 @@ export const register: Register = (on, options) => {
     const span = Math.max(1, cols - sprite.length - 2)
     const t = f % (span * 2)
     const x = t < span ? t : span * 2 - t
-    const say = m === 'talk' ? '…かんがえ中' : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
+    const playSay = together && f % 4 < 2 ? 'かにちゃんとあそんでる! ' + sp(f) : ''
+    const say = m === 'talk' ? '…かんがえ中' : playSay ? playSay : isLonely ? (profile.idle[Math.floor(f / 20) % Math.max(1, profile.idle.length)] ?? '') : (profile.busy[Math.floor(f / 20) % Math.max(1, profile.busy.length)] ?? '')
     const last = ls.length ? ls[ls.length - 1] : null
+    // かにちゃん(Anthropic 風の橙のかに)は逆向きに横歩き。近づくと一緒に遊ぶ
+    const crab = 'V(•ᴥ•)V'
+    const spanC = Math.max(1, cols - crab.length - 2)
+    const tc = Math.floor(f * 0.8 + 17) % (spanC * 2)
+    const xc = spanC - (tc < spanC ? tc : spanC * 2 - tc)
+    const together = Math.abs(xc - x) < 6
+    const kira = sp(f + 3) + sprite + sp(f) + (evAge < 90 ? '♡' : '')
+    const left = Math.min(x, xc), right = Math.max(x, xc)
+    const first = x <= xc ? kira : crab, second = x <= xc ? crab : kira
+    const gap = Math.max(0, right - left - first.length)
+    const play = together ? (f % 2 ? '♡✧' : '✧♡') : ''
+    const line1 = h(Text, { backgroundColor: '#14213d', color: x <= xc ? '#ffe66d' : '#e8814c' }, ' '.repeat(left) + first, h(Text, { backgroundColor: '#14213d', color: '#ffb3d9' }, together ? play.padStart(Math.max(gap, play.length)) : ' '.repeat(gap)), h(Text, { backgroundColor: '#14213d', color: x <= xc ? '#e8814c' : '#ffe66d' }, second))
     const win = sn ? (sn.ok
       ? `でんち ${bar((sn.battery ?? 0) / 100)} ${battWord(sn.battery)} ・ たっち ${touchWord(sn.touchAgo)}${(sn.shake ?? 0) > 1 ? ' ・ ゆれてる!' : ''}`
       : 'いまは寝てる') : '…'
@@ -171,7 +184,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor="#14213d" paddingX={1}>
-        <Text backgroundColor="#14213d" color="#ffe66d">{' '.repeat(x) + sp(f + 3) + sprite + sp(f) + (evAge < 90 ? ' ♡' : '')}</Text>
+        <Text backgroundColor="#14213d">{line1}</Text>
         <Text backgroundColor="#14213d" color="#ffd6e7">{profile.name ? ` ${profile.name} ✧ ${noteSay || evSay || (last && last.who === 'pet' ? last.text : say)}` : ''}</Text>
         <Text backgroundColor="#14213d" color="#a8d8ff">{task ? ` まかせてる: ${task}  ` : ' '}ぷちてゃ: {win}{want}{ns.length ? `  🔔 ${ns.length}` : ''}</Text>
       </Box>
